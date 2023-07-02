@@ -1,0 +1,11 @@
+{
+  "name": "parlamento-scraper",
+  "version": "1.0.0",
+  "description": "Scrape the info of dadosabertos.pt to update the database of parlamento app",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC"
+}
