@@ -1,11 +1,15 @@
 {
   "name": "parlamento-scraper",
   "version": "1.0.0",
+  "type": "module",
   "description": "Scrape the info of dadosabertos.pt to update the database of parlamento app",
   "main": "index.js",
   "scripts": {
     "test": "node index.js"
   },
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "pdf2html": "^3.1.0"
+  }
 }

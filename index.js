@@ -1,5 +1,12 @@
-const legislatura_15_link = "https://app.parlamento.pt/webutils/docs/doc.txt?path=6148523063446f764c324679626d56304c3239775a57356b595852684c3052685a47397a51574a6c636e52766379394a626d6c6a6157463061585a6863793959566955794d45786c5a326c7a6247463064584a684c306c7561574e7059585270646d467a57465a66616e4e76626935306548513d&fich=IniciativasXV_json.txt&Inline=true"
+import { exit } from "process"
+import fs from "fs"
+import { loadForbiddenWords , convertToHTML, replaceHTMLSymbols, spaceHTML, removeForbiddenWords} from "./pdf_propostas.js";
+import proposal_links from "./proposals_links.json" assert { type: 'json' }
 
+//create sleep function
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 function determineProposalResult(votacaoGeneralidadeObj, votacaoEspecialidadeObj ) {
   let proposalResult = "ApprovedInGenerality"
@@ -58,6 +65,50 @@ function votingBlockByOrientation(orientation, votacaoObj) {
   }
 
   return votingBlocks
+}
+
+// have to copy the function from the other .js file because of socket cringes
+async function convertPDFtoHTML(pdfURL, outputFilename, forbidden_words) {
+  return new Promise((resolve, reject) => {
+   fetch(pdfURL, {
+    method: 'GET',
+ 
+  }).then(response => {
+    response.arrayBuffer().then(buffer => {
+      const pdfBuffer = Buffer.from(buffer);
+      //delete the foribidden words from the pdfBuffer
+
+      console.log("Writing downloaded PDF file to " + outputFilename + "...");
+      fs.writeFileSync(outputFilename, pdfBuffer);
+      convertToHTML(outputFilename)
+      .then(text => {
+          //delete the <head> tag
+          text = text.replace(/<head>[\s\S]*<\/head>/, "");
+          //remove the forbidden words
+          text = replaceHTMLSymbols(text);
+          text = spaceHTML(text);
+          text = removeForbiddenWords(text, forbidden_words);
+          
+          fs.unlinkSync(outputFilename);
+          resolve(text);
+
+          
+      }
+      ).catch(error => {
+          console.log(error);
+          reject(error);
+      }
+      )
+  })
+  })
+  .catch(error => {
+    console.log(error);
+    reject(error);
+
+  }
+    
+  )
+})
 }
 
 function splitBetweenKeywords(inputString) {
@@ -142,20 +193,11 @@ function generateVotingBlocks(votacaoObj) {
 }
 
 
-async function processLegislature(leg_link) {
-  const response = await fetch(leg_link);
-  const jsonData = await response.json();
-  const iniciativasData = jsonData["ArrayOfPt_gov_ar_objectos_iniciativas_DetalhePesquisaIniciativasOut"]["pt_gov_ar_objectos_iniciativas_DetalhePesquisaIniciativasOut"]
-
-  let projetosLei = iniciativasData.filter(iniciativa => iniciativa["iniDescTipo"] === 'Projeto de Lei');   
-  //filter projetosLei for iniciativas where the array["iniEventos"]["pt_gov_ar_objectos_iniciativas_EventosOut"] have an element with codigoFase == '250'
-
-  projetosLei = projetosLei.filter(iniciativa => Array.isArray(iniciativa["iniEventos"]["pt_gov_ar_objectos_iniciativas_EventosOut"])
-   && iniciativa["iniEventos"]["pt_gov_ar_objectos_iniciativas_EventosOut"].some(evento => evento["codigoFase"] === '250'));
-
+async function processProjetosLei(projetosLei, forbidden_words) {
   let amountOfIndividualProposals = 0
-  projetosLei.forEach(projetoLei => {
-    console.log("--- PROCESSING: " + projetoLei["iniTitulo"])
+  for (let i = 0; i < projetosLei.length; i++) {
+    const projetoLei = projetosLei[i];
+    console.log(`--- PROCESSING(${i+1} / ${projetosLei.length}) : ` + projetoLei["iniTitulo"])
     console.log("---- ID: " + projetoLei["iniId"])
     
     //deal with proposals from individual deputies later
@@ -165,16 +207,30 @@ async function processLegislature(leg_link) {
     }
    
 
-    const votacaoGeneralObj = projetoLei["iniEventos"]["pt_gov_ar_objectos_iniciativas_EventosOut"]
-    .filter(evento => evento["codigoFase"] === '250')[0]["votacao"]["pt_gov_ar_objectos_VotacaoOut"]
+    const votacaoGeneral = projetoLei["iniEventos"]["pt_gov_ar_objectos_iniciativas_EventosOut"]
+    .filter(evento => evento["codigoFase"] === '250')
+    let votacaoGeneralObj = null
+    if(votacaoGeneral.length > 0) {
+      if(votacaoGeneral[votacaoGeneral.length - 1]["votacao"] != undefined) 
+        votacaoGeneralObj = votacaoGeneral[votacaoGeneral.length - 1]["votacao"]["pt_gov_ar_objectos_VotacaoOut"]
+      else{
+        console.log("--------  Warning: Found votacao generalidade mas nenhuma Votacao -------------")
+        console.log(votacaoGeneral)
+      }
+        
+    }
 
     const votacaoEspecialidade = projetoLei["iniEventos"]["pt_gov_ar_objectos_iniciativas_EventosOut"]
     .filter(evento => evento["codigoFase"] === '320')
     let votacaoEspecialidadeObj = null
 
     if(votacaoEspecialidade.length > 0) {
-      votacaoEspecialidadeObj = votacaoEspecialidade[0]["votacao"]["pt_gov_ar_objectos_VotacaoOut"]
-
+      if(votacaoEspecialidade[votacaoEspecialidade.length - 1]["votacao"] != undefined)
+          votacaoEspecialidadeObj = votacaoEspecialidade[votacaoEspecialidade.length - 1]["votacao"]["pt_gov_ar_objectos_VotacaoOut"]
+      else{
+          console.log("--------  Warning: Found votacao especialidade but no Votacao -------------")
+          console.log(votacaoEspecialidade)
+        }
     }
 
 
@@ -186,51 +242,90 @@ async function processLegislature(leg_link) {
     const proposalLink = projetoLei["iniLinkTexto"]
     
     const proposalResult = determineProposalResult(votacaoGeneralObj, votacaoEspecialidadeObj)
+    const outputFilename = `download_${sourceId}.pdf`
+    //convert the pdf to html and make the post request to store the data in the database
+    await sleep(5000)
+    convertPDFtoHTML(proposalLink, outputFilename, forbidden_words).then((html) => {
+      const proposalTextHTML = html
+      let finalData = {
+        "voteDate": voteDate,
+        "legislatura": legislatura,
+        "sourceId": sourceId,
+        "proposingPartyAcronym": grupo_parlamentar_proposal,
+        "proposalTitle": proposalTitle,
+        "fullProposalTextLink": proposalLink,
+        "proposalTextHTML" : proposalTextHTML,
+        "proposalResult" : proposalResult,
+        "votingResultGenerality" : generateVotingBlocks(votacaoGeneralObj),
+        "votingResultSpeciality" : generateVotingBlocks(votacaoEspecialidadeObj)
 
-
-
-    let finalData = {
-      "voteDate": voteDate,
-      "legislatura": legislatura,
-      "sourceId": sourceId,
-      "proposingPartyAcronym": grupo_parlamentar_proposal,
-      "proposalTitle": proposalTitle,
-      "fullProposalTextLink": proposalLink,
-      "proposalResult" : proposalResult,
-      "votingResultGenerality" : generateVotingBlocks(votacaoGeneralObj),
-      "votingResultSpeciality" : generateVotingBlocks(votacaoEspecialidadeObj)
-
-  }
-
-  console.log(finalData)
-  console.log(finalData["votingResultGenerality"])
-
-  //make the post request to store the data in the database
-  fetch('http://0.0.0.0:8080/proposal', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(finalData),
+      }
+      
+      //delete the pdf file
+      fs.unlinkSync(outputFilename)
     
-  }).then(response => {
-    if(!response.ok) {
-      console.log("This proposal is already stored in the database!")
-    }
- 
-  }) 
-  .catch((error) => {
-    console.error('Error:', error);
-  });
+      //make the post request to store the data in the database
+      fetch(`http://0.0.0.0:8080/proposal/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(finalData),
+        
+      }).then(response => {
+        if(!response.ok) {
+          console.log("This proposal is already stored in the database!")
 
+
+        }else{
+          console.log(`Proposal ${sourceId} stored in the database successfully!`)
+        }
+    
+      }) 
+      .catch((error) => {
+        console.error('Error:', error);
+      });
+    
+
+      }).catch((err) => {
+        console.log(err)
+      })
 
 
 }
 
-  )
 
   console.log("Amount of individual proposals: " + amountOfIndividualProposals)
 }
 
 
-processLegislature(legislatura_15_link);
+async function processLegislature(leg_link, leg_arg) {
+  const response = await fetch(leg_link);
+  const jsonData = await response.json();
+  const iniciativasData = jsonData["ArrayOfPt_gov_ar_objectos_iniciativas_DetalhePesquisaIniciativasOut"]["pt_gov_ar_objectos_iniciativas_DetalhePesquisaIniciativasOut"]
+
+  let projetosLei = iniciativasData.filter(iniciativa => iniciativa["iniDescTipo"] === 'Projeto de Lei');   
+  //filter projetosLei for iniciativas where the array["iniEventos"]["pt_gov_ar_objectos_iniciativas_EventosOut"] have an element with codigoFase == '250'
+
+  projetosLei = projetosLei.filter(iniciativa => Array.isArray(iniciativa["iniEventos"]["pt_gov_ar_objectos_iniciativas_EventosOut"])
+   && iniciativa["iniEventos"]["pt_gov_ar_objectos_iniciativas_EventosOut"].some(evento => evento["codigoFase"] === '250'));
+
+  console.log("Amount of projetos-lei: " + projetosLei.length)
+  
+  const forbidden_words = await loadForbiddenWords(leg_arg)
+  await processProjetosLei(projetosLei, forbidden_words)
+
+ 
+}
+
+//read the argument passed to the script
+const leg_arg = process.argv[2]
+if(!leg_arg){
+
+  console.log("--- Please pass the legislature number as an argument to the script!! ---")
+  exit(1)
+}
+//read the corresponding link from proposals_links.json
+const leg_link = proposal_links["legislaturas"][leg_arg]
+
+processLegislature(leg_link, leg_arg);
