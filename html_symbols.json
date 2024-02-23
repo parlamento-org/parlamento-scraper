@@ -65,5 +65,8 @@
     "&ndash;" : "–",
     "&mdash;" : "—",
     "&lsquo;" : "‘",
-    "&rsquo;" : "’"
+    "&rsquo;" : "’",
+    "&laquo;" : "«",
+    "&raquo;" : "»",
+    "&hellip;": "…"
 }

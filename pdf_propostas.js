@@ -36,7 +36,7 @@ async function loadForbiddenWords(legislature){
     //additional special cases
     forbidden_array.push("Deputado Único", "Deputada Única", "Deputado", "Deputada", "Deputados", "Deputadas", "Deputado(a)", "Deputados");
     forbidden_array = forbidden_array.map((word) => word.toLowerCase());
-    
+    console.log(forbidden_array);
     return forbidden_array;
 
 }
@@ -62,7 +62,7 @@ function spaceHTML(html){
 function removeForbiddenWords(text, forbidden_words){
     // regex matches the words with a space before and after
 
-    const regex = new RegExp("[\n\b\r, ]" + forbidden_words.join("[\n\b\r, ]|[\n\b\r, ]") + "[\n\b\r, ]", "gi");
+    const regex = new RegExp("[\n\b\r,.:; ]" + forbidden_words.join("[\n\b\r,:;. ]|[\n\b\r,;:. ]") + "[\n\b\r,:;. ]", "gi");
     
     const text_without_forbidden_words = text.replace(regex, " <censored> ");
 

@@ -1,5 +1,6 @@
 import { loadForbiddenWords ,convertToHTML, replaceHTMLSymbols, spaceHTML, removeForbiddenWords} from "./pdf_propostas.js";
 import fs from "fs";
+import html_symbols_dict from "./html_symbols.json" assert { type: 'json' }
 
 const foribiddenWords = await loadForbiddenWords("XV");
 
@@ -8,6 +9,28 @@ async function getAllProposals() {
   const jsonData = await response.json();
   return jsonData["proposals"];
 
+}
+
+async function getProposalById(id) {
+  const response = await fetch(`http://0.0.0.0:8080/proposal/${id}`);
+  const jsonData = await response.json();
+  return jsonData;
+
+}
+
+function cleanString(input) {
+    var output = "";
+    //get all characters in html_symbols_dict
+    var html_symbols = "";
+    for (const [key, value] of Object.entries(html_symbols_dict)) {
+        html_symbols += value;
+    }
+    for (var i=0; i<input.length; i++) {
+        if (input.charCodeAt(i) <= 127 || html_symbols.includes(input.charAt(i))) {
+            output += input.charAt(i);
+        }
+    }
+    return output;
 }
 
 async function convertPDFtoHTML(pdfURL, outputFilename, forbidden_words) {
@@ -27,11 +50,15 @@ async function convertPDFtoHTML(pdfURL, outputFilename, forbidden_words) {
             //delete the <head> tag
             text = text.replace(/<head>[\s\S]*<\/head>/, "");
             //remove the forbidden words
+           
             text = replaceHTMLSymbols(text);
             text = spaceHTML(text);
             text = removeForbiddenWords(text, forbidden_words);
+            text = cleanString(text);
+            
             
             fs.unlinkSync(outputFilename);
+            
             resolve(text);
 
             
@@ -53,14 +80,18 @@ async function convertPDFtoHTML(pdfURL, outputFilename, forbidden_words) {
   })
 }
   
+async function updateProposalById(id) {
+    console.log(`---- Updating proposal ${id} ----`);
+    const proposal = await getProposalById(id);
+    await updateProposal(proposal);
+
+}
 
 async function updateProposal(proposalObj) {
     const proposalHTML = proposalObj.proposalTextHTML;
-    const sourceId = proposalObj.sourceId;
-    if(proposalHTML != null){
-        console.log(`Proposal ${sourceId} already has HTML!`);
-        return
-    } 
+    const sourceId = proposalObj.id;
+    console.log(`Updating proposal ${sourceId}...`);
+   
 
     const proposalPDFLink = proposalObj.fullProposalTextLink;
     await convertPDFtoHTML(proposalPDFLink, `download_${sourceId}.pdf`, foribiddenWords).then((html) => {
@@ -97,4 +128,4 @@ async function updateAllProposals() {
     }
 }
 
-updateAllProposals();
+updateProposalById(62);
