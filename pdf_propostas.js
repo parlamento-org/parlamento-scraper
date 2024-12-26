@@ -1,11 +1,8 @@
 //request the online pdf and print out its contents
 import fs from 'fs';
+import forbidden_words from "./forbidden_words.json" with { type: 'json' };
+import html_symbols_dict from "./html_symbols.json" with { type: 'json' };
 import pdf2html from 'pdf2html';
-import forbidden_words from "./forbidden_words.json" assert { type: 'json' }
-import html_symbols_dict from "./html_symbols.json" assert { type: 'json' }
-
-const forbidden_array = await loadForbiddenWords("XV");
-
 
 async function convertToHTML(pdfPath){
     const html = await pdf2html.html(pdfPath);
@@ -24,10 +21,10 @@ async function loadForbiddenWords(legislature){
         },
     })
     const jsonData = await response.json();
-    const grupos_parlamentares = jsonData["Legislatura"]["GruposParlamentares"]["pt_gov_ar_objectos_GPOut"];
-    const deputados = jsonData["Legislatura"]["Deputados"]["pt_ar_wsgode_objectos_DadosDeputadoSearch"];
-    const nome_deputados_completo = deputados.map((deputado) => deputado["depNomeCompleto"]);
-    const nome_deputados_parlamentar = deputados.map((deputado) => deputado["depNomeParlamentar"]);
+    const grupos_parlamentares = jsonData["GruposParlamentares"];
+    const deputados = jsonData["Deputados"];
+    const nome_deputados_completo = deputados.map((deputado) => deputado["DepNomeCompleto"]);
+    const nome_deputados_parlamentar = deputados.map((deputado) => deputado["DepNomeParlamentar"]);
     const siglas_partidos = grupos_parlamentares.map((grupo_parlamentar) => grupo_parlamentar["sigla"]);
     const nome_partidos = grupos_parlamentares.map((grupo_parlamentar) => grupo_parlamentar["nome"]);
 
@@ -36,7 +33,6 @@ async function loadForbiddenWords(legislature){
     //additional special cases
     forbidden_array.push("Deputado Único", "Deputada Única", "Deputado", "Deputada", "Deputados", "Deputadas", "Deputado(a)", "Deputados");
     forbidden_array = forbidden_array.map((word) => word.toLowerCase());
-    console.log(forbidden_array);
     return forbidden_array;
 
 }
@@ -103,7 +99,11 @@ async function convertPDFtoHTML(pdfURL, outputFilename, forbidden_words) {
             reject(error);
         }
         )
-    })
+    }).catch(error => {
+      console.log(error);
+      reject(error);
+    }
+    )
     })
     .catch(error => {
       console.log(error);
@@ -143,5 +143,7 @@ fetch(`http://0.0.0.0:8080/proposal/${proposalId}`, {
 )
     
 }
+
+convertToHTML("download_43114.pdf")
 
 export {convertPDFtoHTML, loadForbiddenWords, convertToHTML, replaceHTMLSymbols, spaceHTML, removeForbiddenWords};
